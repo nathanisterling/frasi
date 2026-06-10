@@ -315,6 +315,18 @@
     <div id="engineStatus" style="margin-top:10px;font-size:0.75rem;color:var(--muted);"></div>
   </div>
 
+  <!-- ElevenLabs premium voice -->
+  <div class="add-box">
+    <h2>🎙 Premium voice — ElevenLabs <span style="font-weight:400;color:var(--muted);font-size:0.8rem">(optional, most authentic)</span></h2>
+    <div class="add-row">
+      <input id="elKeyInput" type="password" placeholder="Paste your ElevenLabs API key" autocomplete="off">
+      <button id="elSaveBtn">Connect</button>
+    </div>
+    <div id="elStatus" style="margin-top:8px;font-size:0.8rem;color:var(--muted);">
+      Free at <b>elevenlabs.io</b>: sign up → click your profile (bottom-left) → API Keys → Create. Your key is stored only on this device. Each phrase is generated once, then cached — the free tier covers hundreds of phrases.
+    </div>
+  </div>
+
   <!-- Add phrase -->
   <div class="add-box">
     <h2>Add a phrase</h2>
@@ -336,6 +348,7 @@
 
 <script>
 (function() {
+  const $ = id => document.getElementById(id);
   const STORAGE_KEY = "frasi-phrases-v1";
 
   const seed = [
@@ -408,6 +421,7 @@
   const VOICE_KEY = "frasi-voice-v2";
   let voiceChoice = localStorage.getItem(VOICE_KEY) || "auto";
   let itVoice = null, enVoice = null;
+  let elVoices = [];   // ElevenLabs voices, filled in after connect
 
   // rank: premium > enhanced > google/siri > rest; compact/eloquence last
   function quality(v) {
@@ -423,33 +437,61 @@
       .filter(v => v.lang.toLowerCase().startsWith("it"))
       .sort((a, b) => quality(b) - quality(a));
   }
-  function pickVoices() {
-    const vs = speechSynthesis.getVoices();
-    if (!vs.length) return;
-    const its = italianVoices();
-    itVoice = its[0] || null;
-    const ens = vs.filter(v => v.lang.toLowerCase().startsWith("en"))
-                  .sort((a, b) => quality(b) - quality(a));
-    enVoice = ens[0] || null;
-    // populate voice picker
+  function buildVoiceOptions() {
     const sel = document.getElementById("voiceSel");
-    sel.innerHTML = '<option value="auto">Auto (best available)</option>';
-    its.forEach(v => {
+    sel.innerHTML = "";
+    if (elVoices.length) {
+      const og = document.createElement("optgroup");
+      og.label = "ElevenLabs — premium";
+      elVoices.forEach(v => {
+        const o = document.createElement("option");
+        o.value = "el:" + v.id;
+        o.textContent = v.name + " ★";
+        og.appendChild(o);
+      });
+      sel.appendChild(og);
+    }
+    const auto = document.createElement("option");
+    auto.value = "auto";
+    auto.textContent = "Auto (best device voice)";
+    sel.appendChild(auto);
+    italianVoices().forEach(v => {
       const o = document.createElement("option");
       o.value = v.name;
       o.textContent = v.name;
       sel.appendChild(o);
     });
-    sel.value = its.some(v => v.name === voiceChoice) ? voiceChoice : "auto";
-    // warn if only low-quality Italian voices (or none) are installed
+    const vals = Array.from(sel.options).map(o => o.value);
+    sel.value = vals.includes(voiceChoice) ? voiceChoice
+              : (elVoices.length ? "el:" + elVoices[0].id : "auto");
+    if (sel.value !== voiceChoice) {
+      voiceChoice = sel.value;
+      try { localStorage.setItem(VOICE_KEY, voiceChoice); } catch (e) {}
+    }
+    updateEngineStatus();
+  }
+  function updateEngineStatus() {
+    if (voiceChoice.startsWith("el:")) {
+      engineStatusEl.textContent = "Voice: " + elName(voiceChoice) + " (ElevenLabs)";
+      $("voiceWarn").style.display = "none";
+      return;
+    }
+    const v = chosenVoice();
+    engineStatusEl.textContent = v ? "Voice: " + v.name : "";
     $("voiceWarn").style.display = (itVoice && quality(itVoice) >= 3) ? "none" : "block";
-    engineStatusEl.textContent = itVoice ? "Voice: " + itVoice.name : "";
+  }
+  function pickVoices() {
+    const vs = speechSynthesis.getVoices();
+    if (!vs.length) return;
+    itVoice = italianVoices()[0] || null;
+    enVoice = vs.filter(v => v.lang.toLowerCase().startsWith("en"))
+                .sort((a, b) => quality(b) - quality(a))[0] || null;
+    buildVoiceOptions();
   }
   document.getElementById("voiceSel").onchange = function() {
     voiceChoice = this.value;
     try { localStorage.setItem(VOICE_KEY, voiceChoice); } catch (e) {}
-    const v = chosenVoice();
-    engineStatusEl.textContent = v ? "Voice: " + v.name : "";
+    updateEngineStatus();
   };
   function chosenVoice() {
     if (voiceChoice !== "auto") {
@@ -462,7 +504,6 @@
   speechSynthesis.onvoiceschanged = pickVoices;
 
   // ---- DOM ----
-  const $ = id => document.getElementById(id);
   const phraseItEl = $("phraseIt"), phraseEnEl = $("phraseEn"),
         dotsEl = $("repeatDots"), playBtn = $("playBtn"),
         listEl = $("listEl");
@@ -470,9 +511,116 @@
   function repeatTarget() { return parseInt($("repeatSel").value, 10); }
   function rate() { return parseFloat($("rateSel").value); }
 
-  // ---- Playback engine (device speech synthesis) ----
+  // ---- ElevenLabs (premium, cached) ----
+  const ELKEY_KEY = "frasi-elkey";
+  let elKey = localStorage.getItem(ELKEY_KEY) || "";
+  function elName(choice) {
+    const v = elVoices.find(v => v.id === choice.slice(3));
+    return v ? v.name : "ElevenLabs";
+  }
+  async function loadElVoices(showErrors) {
+    if (!elKey) return;
+    try {
+      const r = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": elKey } });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      elVoices = (j.voices || []).map(v => ({ id: v.voice_id, name: v.name }));
+      $("elStatus").innerHTML = "✓ Connected — " + elVoices.length +
+        " premium voices added to the Voice menu above. Try <b>Sarah</b> or <b>Charlotte</b>.";
+      buildVoiceOptions();
+    } catch (e) {
+      if (showErrors) $("elStatus").textContent = "⚠️ Couldn't connect (" + e.message + "). Check the key and try again.";
+    }
+  }
+  $("elSaveBtn").onclick = () => {
+    const k = $("elKeyInput").value.trim();
+    if (!k) { $("elKeyInput").focus(); return; }
+    elKey = k;
+    try { localStorage.setItem(ELKEY_KEY, k); } catch (e) {}
+    $("elStatus").textContent = "Connecting…";
+    loadElVoices(true);
+  };
+  if (elKey) { $("elKeyInput").value = elKey; loadElVoices(false); }
+
+  // audio cache (IndexedDB) — each phrase is generated once, replays are free
+  let _db = null;
+  function idb() {
+    return new Promise((res, rej) => {
+      if (_db) return res(_db);
+      const r = indexedDB.open("frasi-audio", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("clips");
+      r.onsuccess = () => { _db = r.result; res(_db); };
+      r.onerror = () => rej(r.error);
+    });
+  }
+  async function cacheGet(key) {
+    try {
+      const d = await idb();
+      return await new Promise(res => {
+        const t = d.transaction("clips").objectStore("clips").get(key);
+        t.onsuccess = () => res(t.result || null);
+        t.onerror = () => res(null);
+      });
+    } catch (e) { return null; }
+  }
+  async function cachePut(key, blob) {
+    try {
+      const d = await idb();
+      d.transaction("clips", "readwrite").objectStore("clips").put(blob, key);
+    } catch (e) {}
+  }
+
+  // shared audio element (primed on user tap so iOS allows playback)
+  const audioEl = new Audio();
+  audioEl.preservesPitch = true;
+  if ("webkitPreservesPitch" in audioEl) audioEl.webkitPreservesPitch = true;
+  const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+  function unlockAudio() {
+    try { audioEl.src = SILENT_WAV; audioEl.play().catch(() => {}); } catch (e) {}
+  }
+
+  async function speakEL(text, onDone, myToken) {
+    const vid = voiceChoice.slice(3);
+    const key = "el|" + vid + "|" + text;
+    let blob = await cacheGet(key);
+    if (!blob) {
+      const r = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + vid, {
+        method: "POST",
+        headers: { "xi-api-key": elKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text, model_id: "eleven_multilingual_v2" })
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      blob = await r.blob();
+      cachePut(key, blob);
+    }
+    if (myToken !== utterCounter) return;
+    const url = URL.createObjectURL(blob);
+    audioEl.onended = () => {
+      URL.revokeObjectURL(url);
+      if (myToken === utterCounter && isPlaying) onDone();
+    };
+    audioEl.src = url;
+    audioEl.playbackRate = rate();
+    await audioEl.play();
+  }
+
+  // ---- Playback engine ----
   function speak(text, lang, onDone) {
     const myToken = ++utterCounter;
+    const isIt = lang.startsWith("it");
+    if (isIt && elKey && voiceChoice.startsWith("el:")) {
+      engineStatusEl.textContent = "Voice: " + elName(voiceChoice) + " (ElevenLabs)";
+      speakEL(text, onDone, myToken).catch(err => {
+        if (myToken !== utterCounter) return;
+        engineStatusEl.textContent = "ElevenLabs error: " + err.message + " — using device voice";
+        speakDevice(text, lang, onDone, myToken);
+      });
+      return;
+    }
+    speakDevice(text, lang, onDone, myToken);
+  }
+
+  function speakDevice(text, lang, onDone, myToken) {
     const u = new SpeechSynthesisUtterance(text);
     const isIt = lang.startsWith("it");
     const voice = isIt ? chosenVoice() : enVoice;
@@ -489,6 +637,8 @@
   function stopAudio() {
     utterCounter++;            // invalidate pending callbacks
     clearTimeout(timer);
+    audioEl.onended = null;
+    audioEl.pause();
     speechSynthesis.cancel();
   }
 
@@ -568,6 +718,7 @@
 
   function startFrom(idx) {
     stopAudio();
+    unlockAudio();   // prime audio element inside the tap (iOS requirement)
     currentIdx = idx;
     repeatNum = 0;
     setPlaying(true);
