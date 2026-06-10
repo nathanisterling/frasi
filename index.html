@@ -285,7 +285,7 @@
       <div class="setting">
         <label for="voiceSel">Voice</label>
         <select id="voiceSel">
-          <option value="google">Online — Google (female)</option>
+          <option value="auto">Auto (best available)</option>
         </select>
       </div>
       <div class="setting">
@@ -311,7 +311,7 @@
         </label>
       </div>
     </div>
-    <div class="voice-warn" id="voiceWarn">⚠️ Couldn't reach the online Italian voice — using your device's voice instead. Check your internet connection for the authentic accent.</div>
+    <div class="voice-warn" id="voiceWarn">⚠️ No high-quality Italian voice found on this device. iPhone: Settings → Accessibility → Spoken Content → Voices → Italian → download <b>Federica (Premium)</b> or <b>Alice (Enhanced)</b>. Mac: System Settings → Accessibility → Spoken Content → Manage Voices.</div>
     <div id="engineStatus" style="margin-top:10px;font-size:0.75rem;color:var(--muted);"></div>
   </div>
 
@@ -403,42 +403,63 @@
   }
   function activeList() { return phrases.filter(p => !p.archived); }
 
-  // ---- Device voices (voice picker + fallback) ----
-  const VOICE_KEY = "frasi-voice-v1";
-  let voiceChoice = localStorage.getItem(VOICE_KEY) || "google";
+  // ---- Voices ----
+  const engineStatusEl = document.getElementById("engineStatus");
+  const VOICE_KEY = "frasi-voice-v2";
+  let voiceChoice = localStorage.getItem(VOICE_KEY) || "auto";
   let itVoice = null, enVoice = null;
 
+  // rank: premium > enhanced > google/siri > rest; compact/eloquence last
+  function quality(v) {
+    const n = v.name.toLowerCase();
+    if (/premium/.test(n)) return 5;
+    if (/enhanced/.test(n)) return 4;
+    if (/google|siri/.test(n)) return 3;
+    if (/compact|eloquence/.test(n)) return 0;
+    return 2;
+  }
+  function italianVoices() {
+    return speechSynthesis.getVoices()
+      .filter(v => v.lang.toLowerCase().startsWith("it"))
+      .sort((a, b) => quality(b) - quality(a));
+  }
   function pickVoices() {
     const vs = speechSynthesis.getVoices();
     if (!vs.length) return;
-    const its = vs.filter(v => v.lang.toLowerCase().startsWith("it"));
-    // prefer Google/enhanced/premium voices when available
-    itVoice = its.find(v => /google/i.test(v.name)) ||
-              its.find(v => /enhanced|premium/i.test(v.name)) || its[0] || null;
-    const ens = vs.filter(v => v.lang.toLowerCase().startsWith("en"));
-    enVoice = ens.find(v => /google/i.test(v.name)) ||
-              ens.find(v => /enhanced|premium/i.test(v.name)) || ens[0] || null;
-    // populate voice picker with device Italian voices
+    const its = italianVoices();
+    itVoice = its[0] || null;
+    const ens = vs.filter(v => v.lang.toLowerCase().startsWith("en"))
+                  .sort((a, b) => quality(b) - quality(a));
+    enVoice = ens[0] || null;
+    // populate voice picker
     const sel = document.getElementById("voiceSel");
-    sel.innerHTML = '<option value="google">Online — Google (female)</option>';
+    sel.innerHTML = '<option value="auto">Auto (best available)</option>';
     its.forEach(v => {
       const o = document.createElement("option");
       o.value = v.name;
-      o.textContent = v.name + " — device";
+      o.textContent = v.name;
       sel.appendChild(o);
     });
-    sel.value = its.some(v => v.name === voiceChoice) ? voiceChoice : "google";
+    sel.value = its.some(v => v.name === voiceChoice) ? voiceChoice : "auto";
+    // warn if only low-quality Italian voices (or none) are installed
+    $("voiceWarn").style.display = (itVoice && quality(itVoice) >= 3) ? "none" : "block";
+    engineStatusEl.textContent = itVoice ? "Voice: " + itVoice.name : "";
   }
-  pickVoices();
-  speechSynthesis.onvoiceschanged = pickVoices;
   document.getElementById("voiceSel").onchange = function() {
     voiceChoice = this.value;
     try { localStorage.setItem(VOICE_KEY, voiceChoice); } catch (e) {}
+    const v = chosenVoice();
+    engineStatusEl.textContent = v ? "Voice: " + v.name : "";
   };
-  function chosenDeviceVoice() {
-    if (voiceChoice === "google") return null;
-    return speechSynthesis.getVoices().find(v => v.name === voiceChoice) || null;
+  function chosenVoice() {
+    if (voiceChoice !== "auto") {
+      const v = speechSynthesis.getVoices().find(v => v.name === voiceChoice);
+      if (v) return v;
+    }
+    return itVoice;
   }
+  pickVoices();
+  speechSynthesis.onvoiceschanged = pickVoices;
 
   // ---- DOM ----
   const $ = id => document.getElementById(id);
@@ -449,73 +470,25 @@
   function repeatTarget() { return parseInt($("repeatSel").value, 10); }
   function rate() { return parseFloat($("rateSel").value); }
 
-  // ---- Playback engine ----
-  // Primary: Google Translate's neural Italian voice, streamed as audio
-  // (authentic accent, needs internet). Fallback: device speechSynthesis.
-  const audioEl = new Audio();
-  audioEl.preservesPitch = true;
-  if ("webkitPreservesPitch" in audioEl) audioEl.webkitPreservesPitch = true;
-  const engineStatusEl = document.getElementById("engineStatus");
-  let googleFailed = false;
-
-  function setEngineStatus(online, reason) {
-    engineStatusEl.textContent = online
-      ? "Voice: Google Italian neural (online) ✓"
-      : "Voice: device fallback" + (reason ? " (" + reason + ")" : "");
-    $("voiceWarn").style.display = online ? "none" : "block";
-  }
-
+  // ---- Playback engine (device speech synthesis) ----
   function speak(text, lang, onDone) {
     const myToken = ++utterCounter;
-    // user picked a device voice for Italian
-    if (lang === "it" && voiceChoice !== "google") {
-      engineStatusEl.textContent = "Voice: " + voiceChoice + " (device) ✓";
-      $("voiceWarn").style.display = "none";
-      speakFallback(text, lang, onDone, myToken);
-      return;
-    }
-    if (googleFailed) { speakFallback(text, lang, onDone, myToken); return; }
-    const url = "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=" +
-                lang + "&q=" + encodeURIComponent(text);
-    let fellBack = false;
-    const fallback = (reason) => {
-      if (myToken !== utterCounter || fellBack) return;
-      fellBack = true;
-      googleFailed = true;            // use device voice until next play press
-      setEngineStatus(false, reason);
-      speakFallback(text, lang, onDone, myToken);
-    };
-    audioEl.onended = () => { if (myToken === utterCounter && isPlaying) onDone(); };
-    audioEl.onerror = () => {
-      const e = audioEl.error;
-      fallback(e ? "media error " + e.code : "load error");
-    };
-    audioEl.onplaying = () => { if (myToken === utterCounter) setEngineStatus(true); };
-    audioEl.src = url;
-    audioEl.playbackRate = rate();
-    audioEl.play().catch(err => {
-      // AbortError = we interrupted it ourselves; anything else = fall back
-      if (err && err.name !== "AbortError") fallback(err.name);
-    });
-  }
-
-  function speakFallback(text, lang, onDone, myToken) {
     const u = new SpeechSynthesisUtterance(text);
     const isIt = lang.startsWith("it");
-    const voice = isIt ? (chosenDeviceVoice() || itVoice) : enVoice;
+    const voice = isIt ? chosenVoice() : enVoice;
     if (voice) u.voice = voice;
     u.lang = isIt ? "it-IT" : "en-US";
     u.rate = rate();
     u.onend = () => { if (myToken === utterCounter && isPlaying) onDone(); };
-    u.onerror = () => { if (myToken === utterCounter && isPlaying) onDone(); };
+    u.onerror = (e) => {
+      if (myToken === utterCounter && isPlaying && e.error !== "canceled" && e.error !== "interrupted") onDone();
+    };
     speechSynthesis.speak(u);
   }
 
   function stopAudio() {
     utterCounter++;            // invalidate pending callbacks
     clearTimeout(timer);
-    audioEl.onended = audioEl.onerror = audioEl.onplaying = null;
-    audioEl.pause();
     speechSynthesis.cancel();
   }
 
@@ -604,7 +577,7 @@
   // ---- Transport controls ----
   playBtn.onclick = () => {
     if (isPlaying) { setPlaying(false); renderDots(); }
-    else { googleFailed = false; startFrom(currentIdx); }  // retry online voice each play
+    else { startFrom(currentIdx); }
   };
   $("nextBtn").onclick = () => {
     if (!activeList().length) return;
