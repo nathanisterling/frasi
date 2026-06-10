@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frasi — Italian Phrase Trainer</title>
+<style>
+  :root {
+    --green: #008C45;
+    --red: #CD212A;
+    --cream: #faf7f0;
+    --ink: #2b2b2b;
+    --muted: #8a857c;
+    --card: #ffffff;
+    --border: #e8e2d6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--cream);
+    color: var(--ink);
+    min-height: 100vh;
+    padding-bottom: 60px;
+  }
+  header {
+    text-align: center;
+    padding: 28px 16px 10px;
+  }
+  header h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  header h1 .flag { font-size: 1.2rem; }
+  header p { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+  .container { max-width: 680px; margin: 0 auto; padding: 0 16px; }
+
+  /* ---- Now playing card ---- */
+  .player {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 28px 24px 22px;
+    margin-top: 18px;
+    text-align: center;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.05);
+    position: relative;
+    overflow: hidden;
+  }
+  .player::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 5px;
+    background: linear-gradient(90deg, var(--green) 33%, #fff 33% 66%, var(--red) 66%);
+  }
+  .phrase-it {
+    font-size: 1.5rem;
+    font-weight: 650;
+    line-height: 1.35;
+    min-height: 2.7em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .phrase-it.speaking { color: var(--green); }
+  .phrase-en {
+    font-size: 1.05rem;
+    color: var(--muted);
+    font-style: italic;
+    min-height: 1.5em;
+    margin-top: 10px;
+    transition: opacity 0.4s;
+  }
+  .phrase-en.hidden-text { opacity: 0; }
+  .repeat-dots {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin: 16px 0 4px;
+  }
+  .repeat-dots .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background 0.2s, transform 0.2s;
+  }
+  .repeat-dots .dot.done { background: var(--green); }
+  .repeat-dots .dot.now { background: var(--red); transform: scale(1.3); }
+
+  .transport {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    align-items: center;
+    margin-top: 14px;
+  }
+  .transport button {
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 50%;
+    width: 52px; height: 52px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.15s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .transport button:hover { background: #f3efe6; }
+  .transport button:active { transform: scale(0.93); }
+  .transport .play-btn {
+    width: 68px; height: 68px;
+    font-size: 1.6rem;
+    background: var(--green);
+    color: #fff;
+    border: none;
+  }
+  .transport .play-btn:hover { background: #00a350; }
+
+  /* ---- Settings row ---- */
+  .settings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 22px;
+    justify-content: center;
+    align-items: center;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--border);
+    font-size: 0.88rem;
+    color: var(--ink);
+  }
+  .setting { display: flex; align-items: center; gap: 8px; }
+  .setting label { color: var(--muted); }
+  .setting select {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 8px;
+    background: #fff;
+    font-size: 0.88rem;
+    cursor: pointer;
+  }
+  /* toggle switch */
+  .switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider-t {
+    position: absolute; inset: 0;
+    background: #d8d2c4;
+    border-radius: 24px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .slider-t::before {
+    content: "";
+    position: absolute;
+    width: 18px; height: 18px;
+    left: 3px; top: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .switch input:checked + .slider-t { background: var(--green); }
+  .switch input:checked + .slider-t::before { transform: translateX(18px); }
+
+  .voice-warn {
+    margin-top: 12px;
+    font-size: 0.8rem;
+    color: var(--red);
+    display: none;
+  }
+
+  /* ---- Add phrase ---- */
+  .add-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    margin-top: 22px;
+  }
+  .add-box h2 { font-size: 1rem; margin-bottom: 10px; }
+  .add-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .add-row input {
+    flex: 1 1 200px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    background: #fff;
+  }
+  .add-row input:focus { outline: 2px solid var(--green); border-color: transparent; }
+  .add-row button {
+    background: var(--ink);
+    color: #fff;
+    border: none;
+    border-radius: 9px;
+    padding: 10px 20px;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  .add-row button:hover { background: #000; }
+
+  /* ---- Lists ---- */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin-top: 24px;
+  }
+  .tabs button {
+    border: 1px solid var(--border);
+    background: #f1ece1;
+    border-radius: 10px 10px 0 0;
+    border-bottom: none;
+    padding: 9px 18px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    color: var(--muted);
+  }
+  .tabs button.active {
+    background: var(--card);
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .list {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 0 14px 14px 14px;
+    overflow: hidden;
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .item:last-child { border-bottom: none; }
+  .item.playing-now { background: #f0f9f3; }
+  .item .txt { flex: 1; min-width: 0; }
+  .item .it { font-weight: 600; font-size: 0.95rem; }
+  .item .en { font-size: 0.83rem; color: var(--muted); font-style: italic; }
+  .item .actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .item .actions button {
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 8px;
+    width: 34px; height: 34px;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .item .actions button:hover { background: #f3efe6; }
+  .item .actions .del:hover { background: #fdeaea; border-color: var(--red); }
+  .empty {
+    padding: 28px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="flag">🇮🇹</span> Frasi</h1>
+  <p>Listen, repeat, remember.</p>
+</header>
+
+<div class="container">
+
+  <!-- Player -->
+  <div class="player">
+    <div class="phrase-it" id="phraseIt">Press play to begin</div>
+    <div class="phrase-en hidden-text" id="phraseEn">&nbsp;</div>
+    <div class="repeat-dots" id="repeatDots"></div>
+    <div class="transport">
+      <button id="prevBtn" title="Previous phrase">⏮</button>
+      <button id="playBtn" class="play-btn" title="Play / Pause">▶</button>
+      <button id="nextBtn" title="Next phrase">⏭</button>
+    </div>
+    <div class="settings">
+      <div class="setting">
+        <label for="repeatSel">Repeats</label>
+        <select id="repeatSel">
+          <option>1</option><option>2</option><option selected>3</option>
+          <option>4</option><option>5</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label for="voiceSel">Voice</label>
+        <select id="voiceSel">
+          <option value="google">Online — Google (female)</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label for="rateSel">Speed</label>
+        <select id="rateSel">
+          <option value="0.6">Slow</option>
+          <option value="0.8" selected>Normal</option>
+          <option value="1">Fast</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label for="transToggle">Show translation</label>
+        <label class="switch">
+          <input type="checkbox" id="transToggle" checked>
+          <span class="slider-t"></span>
+        </label>
+      </div>
+      <div class="setting">
+        <label for="speakTransToggle">Speak translation</label>
+        <label class="switch">
+          <input type="checkbox" id="speakTransToggle">
+          <span class="slider-t"></span>
+        </label>
+      </div>
+    </div>
+    <div class="voice-warn" id="voiceWarn">⚠️ Couldn't reach the online Italian voice — using your device's voice instead. Check your internet connection for the authentic accent.</div>
+    <div id="engineStatus" style="margin-top:10px;font-size:0.75rem;color:var(--muted);"></div>
+  </div>
+
+  <!-- Add phrase -->
+  <div class="add-box">
+    <h2>Add a phrase</h2>
+    <div class="add-row">
+      <input id="newIt" placeholder="Italian — e.g. Fammi sapere quando sei libero" autocomplete="off">
+      <input id="newEn" placeholder="English — e.g. Let me know when you're free" autocomplete="off">
+      <button id="addBtn">Add</button>
+    </div>
+  </div>
+
+  <!-- Lists -->
+  <div class="tabs">
+    <button id="tabActive" class="active">On rotation (<span id="countActive">0</span>)</button>
+    <button id="tabArchived">Archived (<span id="countArchived">0</span>)</button>
+  </div>
+  <div class="list" id="listEl"></div>
+
+</div>
+
+<script>
+(function() {
+  const STORAGE_KEY = "frasi-phrases-v1";
+
+  const seed = [
+    ["Potrebbe parlare più lentamente, per favore?", "Could you speak more slowly, please?"],
+    ["Potrebbe ripetere? Non ho capito bene.", "Could you repeat that? I didn't quite understand."],
+    ["Vorrei prenotare un tavolo per due per stasera.", "I'd like to book a table for two for tonight."],
+    ["Mi può consigliare un piatto tipico della zona?", "Can you recommend a typical local dish?"],
+    ["Sto solo dando un'occhiata, grazie.", "I'm just looking around, thanks."],
+    ["Quanto ci vuole per arrivare in centro?", "How long does it take to get to the center?"],
+    ["Mi sa che ho lasciato il portafoglio a casa.", "I think I left my wallet at home."],
+    ["Che ne dici di andare al cinema stasera?", "How about going to the movies tonight?"],
+    ["Era da tanto che non ci vedevamo!", "It's been so long since we last saw each other!"],
+    ["Non vedo l'ora di vederti.", "I can't wait to see you."],
+    ["Fammi sapere quando sei libero.", "Let me know when you're free."],
+    ["Secondo me, vale la pena visitarlo.", "In my opinion, it's worth visiting."],
+    ["Mi ci è voluta un'ora per arrivare qui.", "It took me an hour to get here."],
+    ["Magari potremmo fare due passi dopo cena.", "Maybe we could take a walk after dinner."],
+    ["Devo sbrigare delle commissioni nel pomeriggio.", "I have to run some errands in the afternoon."],
+    ["Ci tengo molto a questo progetto.", "This project means a lot to me."],
+    ["Susanna li ha già visti tutti?", "Has Susanna already seen them all?"],
+    ["Mi piacerebbe venirti a trovare quando sarò in Italia, ma prima voglio migliorare il mio italiano per parlare in modo più naturale.", "I'd like to come visit you when I'm in Italy, but first I want to improve my Italian to speak more naturally."],
+    ["Non riesco a capire perché abbiano preso questa decisione senza consultarci.", "I can't understand why they took this decision without consulting us."],
+    ["Se mi organizzo bene, riesco a finire il lavoro prima della scadenza.", "If I organise myself well, I can finish the work before the deadline."],
+    ["Devo fare una scelta importante riguardo al mio futuro professionale.", "I have to make an important choice regarding my professional future."],
+    ["Mi farebbe piacere passare più tempo con la famiglia durante il fine settimana.", "I would enjoy spending more time with my family during the weekend."],
+    ["Secondo me stai complicando un po' troppo le cose.", "I think you're overcomplicating things a bit."],
+    ["A dire il vero, non ci avevo pensato.", "To be honest, I hadn't thought about it."],
+    ["Se devo essere sincero, non mi convince del tutto.", "If I'm honest, it doesn't fully convince me."],
+    ["Non è proprio quello che avevo in mente.", "That's not exactly what I had in mind."],
+    ["Alla fine, dipende tutto da come lo guardi.", "In the end, it all depends on how you look at it."],
+    ["Non ha molto senso farlo in questo modo.", "It doesn't make much sense to do it this way."],
+    ["Se vuoi, possiamo parlarne con calma.", "If you want, we can talk about it calmly."],
+    ["Mi sembra una buona idea, tutto sommato.", "It seems like a good idea, all things considered."],
+    ["Non è detto che funzioni.", "It's not guaranteed to work."],
+    ["Vedila così: potrebbe anche essere un'opportunità.", "Look at it this way: it could be an opportunity."]
+  ];
+
+  // ---- State ----
+  let phrases = load();
+  save(); // persist any newly merged phrases
+  let currentIdx = 0;          // index within active list
+  let repeatNum = 0;           // which repeat we're on (1-based)
+  let isPlaying = false;
+  let currentTab = "active";
+  let timer = null;
+  let utterCounter = 0;        // guards against stale onend callbacks
+
+  function load() {
+    let stored = null;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) stored = JSON.parse(raw);
+    } catch (e) {}
+    if (!stored) return seed.map((p, i) => ({ id: i + 1, it: p[0], en: p[1], archived: false }));
+    // merge in seed phrases added to the file after first run (skip ones already saved)
+    const have = new Set(stored.map(p => p.it));
+    let nextId = Math.max(0, ...stored.map(p => p.id)) + 1;
+    seed.forEach(p => {
+      if (!have.has(p[0])) stored.push({ id: nextId++, it: p[0], en: p[1], archived: false });
+    });
+    return stored;
+  }
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(phrases)); } catch (e) {}
+  }
+  function activeList() { return phrases.filter(p => !p.archived); }
+
+  // ---- Device voices (voice picker + fallback) ----
+  const VOICE_KEY = "frasi-voice-v1";
+  let voiceChoice = localStorage.getItem(VOICE_KEY) || "google";
+  let itVoice = null, enVoice = null;
+
+  function pickVoices() {
+    const vs = speechSynthesis.getVoices();
+    if (!vs.length) return;
+    const its = vs.filter(v => v.lang.toLowerCase().startsWith("it"));
+    // prefer Google/enhanced/premium voices when available
+    itVoice = its.find(v => /google/i.test(v.name)) ||
+              its.find(v => /enhanced|premium/i.test(v.name)) || its[0] || null;
+    const ens = vs.filter(v => v.lang.toLowerCase().startsWith("en"));
+    enVoice = ens.find(v => /google/i.test(v.name)) ||
+              ens.find(v => /enhanced|premium/i.test(v.name)) || ens[0] || null;
+    // populate voice picker with device Italian voices
+    const sel = document.getElementById("voiceSel");
+    sel.innerHTML = '<option value="google">Online — Google (female)</option>';
+    its.forEach(v => {
+      const o = document.createElement("option");
+      o.value = v.name;
+      o.textContent = v.name + " — device";
+      sel.appendChild(o);
+    });
+    sel.value = its.some(v => v.name === voiceChoice) ? voiceChoice : "google";
+  }
+  pickVoices();
+  speechSynthesis.onvoiceschanged = pickVoices;
+  document.getElementById("voiceSel").onchange = function() {
+    voiceChoice = this.value;
+    try { localStorage.setItem(VOICE_KEY, voiceChoice); } catch (e) {}
+  };
+  function chosenDeviceVoice() {
+    if (voiceChoice === "google") return null;
+    return speechSynthesis.getVoices().find(v => v.name === voiceChoice) || null;
+  }
+
+  // ---- DOM ----
+  const $ = id => document.getElementById(id);
+  const phraseItEl = $("phraseIt"), phraseEnEl = $("phraseEn"),
+        dotsEl = $("repeatDots"), playBtn = $("playBtn"),
+        listEl = $("listEl");
+
+  function repeatTarget() { return parseInt($("repeatSel").value, 10); }
+  function rate() { return parseFloat($("rateSel").value); }
+
+  // ---- Playback engine ----
+  // Primary: Google Translate's neural Italian voice, streamed as audio
+  // (authentic accent, needs internet). Fallback: device speechSynthesis.
+  const audioEl = new Audio();
+  audioEl.preservesPitch = true;
+  if ("webkitPreservesPitch" in audioEl) audioEl.webkitPreservesPitch = true;
+  const engineStatusEl = document.getElementById("engineStatus");
+  let googleFailed = false;
+
+  function setEngineStatus(online, reason) {
+    engineStatusEl.textContent = online
+      ? "Voice: Google Italian neural (online) ✓"
+      : "Voice: device fallback" + (reason ? " (" + reason + ")" : "");
+    $("voiceWarn").style.display = online ? "none" : "block";
+  }
+
+  function speak(text, lang, onDone) {
+    const myToken = ++utterCounter;
+    // user picked a device voice for Italian
+    if (lang === "it" && voiceChoice !== "google") {
+      engineStatusEl.textContent = "Voice: " + voiceChoice + " (device) ✓";
+      $("voiceWarn").style.display = "none";
+      speakFallback(text, lang, onDone, myToken);
+      return;
+    }
+    if (googleFailed) { speakFallback(text, lang, onDone, myToken); return; }
+    const url = "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=" +
+                lang + "&q=" + encodeURIComponent(text);
+    let fellBack = false;
+    const fallback = (reason) => {
+      if (myToken !== utterCounter || fellBack) return;
+      fellBack = true;
+      googleFailed = true;            // use device voice until next play press
+      setEngineStatus(false, reason);
+      speakFallback(text, lang, onDone, myToken);
+    };
+    audioEl.onended = () => { if (myToken === utterCounter && isPlaying) onDone(); };
+    audioEl.onerror = () => {
+      const e = audioEl.error;
+      fallback(e ? "media error " + e.code : "load error");
+    };
+    audioEl.onplaying = () => { if (myToken === utterCounter) setEngineStatus(true); };
+    audioEl.src = url;
+    audioEl.playbackRate = rate();
+    audioEl.play().catch(err => {
+      // AbortError = we interrupted it ourselves; anything else = fall back
+      if (err && err.name !== "AbortError") fallback(err.name);
+    });
+  }
+
+  function speakFallback(text, lang, onDone, myToken) {
+    const u = new SpeechSynthesisUtterance(text);
+    const isIt = lang.startsWith("it");
+    const voice = isIt ? (chosenDeviceVoice() || itVoice) : enVoice;
+    if (voice) u.voice = voice;
+    u.lang = isIt ? "it-IT" : "en-US";
+    u.rate = rate();
+    u.onend = () => { if (myToken === utterCounter && isPlaying) onDone(); };
+    u.onerror = () => { if (myToken === utterCounter && isPlaying) onDone(); };
+    speechSynthesis.speak(u);
+  }
+
+  function stopAudio() {
+    utterCounter++;            // invalidate pending callbacks
+    clearTimeout(timer);
+    audioEl.onended = audioEl.onerror = audioEl.onplaying = null;
+    audioEl.pause();
+    speechSynthesis.cancel();
+  }
+
+  function showCurrent() {
+    const list = activeList();
+    if (!list.length) {
+      phraseItEl.textContent = "No phrases on rotation — add or restore some below.";
+      phraseEnEl.innerHTML = "&nbsp;";
+      dotsEl.innerHTML = "";
+      return;
+    }
+    if (currentIdx >= list.length) currentIdx = 0;
+    const p = list[currentIdx];
+    phraseItEl.textContent = p.it;
+    phraseEnEl.textContent = p.en;
+    phraseEnEl.classList.add("hidden-text");
+    renderDots();
+    renderList(); // highlight playing row
+  }
+
+  function renderDots() {
+    const n = repeatTarget();
+    dotsEl.innerHTML = "";
+    for (let i = 1; i <= n; i++) {
+      const d = document.createElement("span");
+      d.className = "dot" + (i < repeatNum ? " done" : i === repeatNum ? " now" : "");
+      dotsEl.appendChild(d);
+    }
+  }
+
+  function playCycle() {
+    const list = activeList();
+    if (!list.length) { setPlaying(false); showCurrent(); return; }
+    if (currentIdx >= list.length) currentIdx = 0;
+    const p = list[currentIdx];
+    repeatNum++;
+    showCurrent();
+    phraseItEl.classList.add("speaking");
+
+    speak(p.it, "it", () => {
+      phraseItEl.classList.remove("speaking");
+      if (repeatNum < repeatTarget()) {
+        timer = setTimeout(playCycle, 900);          // pause between repeats
+      } else {
+        afterRepeats(p);
+      }
+    });
+  }
+
+  function afterRepeats(p) {
+    const show = $("transToggle").checked;
+    const sayIt = $("speakTransToggle").checked;
+    if (show) phraseEnEl.classList.remove("hidden-text");
+    const advance = () => { timer = setTimeout(nextPhrase, 1400); };
+    if (sayIt) {
+      timer = setTimeout(() => speak(p.en, "en", advance), 500);
+    } else {
+      advance();
+    }
+  }
+
+  function nextPhrase() {
+    if (!isPlaying) return;
+    repeatNum = 0;
+    currentIdx = (currentIdx + 1) % Math.max(activeList().length, 1);
+    playCycle();
+  }
+
+  function setPlaying(on) {
+    isPlaying = on;
+    playBtn.textContent = on ? "⏸" : "▶";
+    if (!on) {
+      stopAudio();
+      phraseItEl.classList.remove("speaking");
+    }
+  }
+
+  function startFrom(idx) {
+    stopAudio();
+    currentIdx = idx;
+    repeatNum = 0;
+    setPlaying(true);
+    playCycle();
+  }
+
+  // ---- Transport controls ----
+  playBtn.onclick = () => {
+    if (isPlaying) { setPlaying(false); renderDots(); }
+    else { googleFailed = false; startFrom(currentIdx); }  // retry online voice each play
+  };
+  $("nextBtn").onclick = () => {
+    if (!activeList().length) return;
+    stopAudio();
+    repeatNum = 0;
+    currentIdx = (currentIdx + 1) % activeList().length;
+    if (isPlaying) playCycle(); else showCurrent();
+  };
+  $("prevBtn").onclick = () => {
+    if (!activeList().length) return;
+    stopAudio();
+    repeatNum = 0;
+    currentIdx = (currentIdx - 1 + activeList().length) % activeList().length;
+    if (isPlaying) playCycle(); else showCurrent();
+  };
+  $("repeatSel").onchange = renderDots;
+  $("transToggle").onchange = () => {
+    // reflect immediately if phrase already finished its repeats
+    if ($("transToggle").checked && repeatNum >= repeatTarget()) {
+      phraseEnEl.classList.remove("hidden-text");
+    } else if (!$("transToggle").checked) {
+      phraseEnEl.classList.add("hidden-text");
+    }
+  };
+
+  // ---- Add phrase ----
+  $("addBtn").onclick = addPhrase;
+  $("newEn").addEventListener("keydown", e => { if (e.key === "Enter") addPhrase(); });
+  $("newIt").addEventListener("keydown", e => { if (e.key === "Enter") $("newEn").focus(); });
+  function addPhrase() {
+    const it = $("newIt").value.trim();
+    const en = $("newEn").value.trim();
+    if (!it) { $("newIt").focus(); return; }
+    const id = Math.max(0, ...phrases.map(p => p.id)) + 1;
+    phrases.push({ id, it, en: en || "(no translation)", archived: false });
+    save();
+    $("newIt").value = ""; $("newEn").value = "";
+    $("newIt").focus();
+    renderList();
+    if (activeList().length === 1) showCurrent();
+  }
+
+  // ---- Tabs & list ----
+  $("tabActive").onclick = () => switchTab("active");
+  $("tabArchived").onclick = () => switchTab("archived");
+  function switchTab(t) {
+    currentTab = t;
+    $("tabActive").classList.toggle("active", t === "active");
+    $("tabArchived").classList.toggle("active", t === "archived");
+    renderList();
+  }
+
+  function renderList() {
+    const showArchived = currentTab === "archived";
+    const items = phrases.filter(p => p.archived === showArchived);
+    $("countActive").textContent = activeList().length;
+    $("countArchived").textContent = phrases.filter(p => p.archived).length;
+
+    listEl.innerHTML = "";
+    if (!items.length) {
+      listEl.innerHTML = '<div class="empty">' +
+        (showArchived ? "Nothing archived." : "No phrases on rotation. Add one above or restore from the archive.") +
+        "</div>";
+      return;
+    }
+    const act = activeList();
+    const nowPlayingId = act.length && currentIdx < act.length ? act[currentIdx].id : null;
+
+    items.forEach(p => {
+      const row = document.createElement("div");
+      row.className = "item" + (!showArchived && p.id === nowPlayingId ? " playing-now" : "");
+      const txt = document.createElement("div");
+      txt.className = "txt";
+      txt.innerHTML = '<div class="it"></div><div class="en"></div>';
+      txt.querySelector(".it").textContent = p.it;
+      txt.querySelector(".en").textContent = p.en;
+      const actions = document.createElement("div");
+      actions.className = "actions";
+
+      if (!showArchived) {
+        const playB = btn("▶", "Play this phrase", () => {
+          const idx = activeList().findIndex(x => x.id === p.id);
+          if (idx >= 0) startFrom(idx);
+        });
+        const archB = btn("📥", "Archive", () => { toggleArchive(p.id, true); });
+        actions.append(playB, archB);
+      } else {
+        const restB = btn("📤", "Restore to rotation", () => { toggleArchive(p.id, false); });
+        actions.append(restB);
+      }
+      const delB = btn("🗑", "Delete forever", () => {
+        if (confirm("Delete this phrase permanently?")) {
+          phrases = phrases.filter(x => x.id !== p.id);
+          save(); fixIndexAfterChange(); renderList();
+        }
+      });
+      delB.className = "del";
+      actions.append(delB);
+
+      row.append(txt, actions);
+      listEl.appendChild(row);
+    });
+  }
+
+  function btn(label, title, fn) {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.title = title;
+    b.onclick = fn;
+    return b;
+  }
+
+  function toggleArchive(id, archived) {
+    const p = phrases.find(x => x.id === id);
+    if (p) p.archived = archived;
+    save();
+    fixIndexAfterChange();
+    renderList();
+  }
+
+  function fixIndexAfterChange() {
+    const list = activeList();
+    if (!list.length) {
+      setPlaying(false);
+      currentIdx = 0;
+      showCurrent();
+      return;
+    }
+    if (currentIdx >= list.length) currentIdx = 0;
+    if (!isPlaying) showCurrent();
+  }
+
+  // ---- Init ----
+  renderList();
+  showCurrent();
+})();
+</script>
+</body>
+</html>
