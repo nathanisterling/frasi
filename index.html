@@ -494,14 +494,28 @@
     updateEngineStatus();
   };
   function chosenVoice() {
-    if (voiceChoice !== "auto") {
+    // always resolve from the live voice list (iOS loads voices late)
+    if (voiceChoice !== "auto" && !voiceChoice.startsWith("el:")) {
       const v = speechSynthesis.getVoices().find(v => v.name === voiceChoice);
       if (v) return v;
     }
-    return itVoice;
+    return italianVoices()[0] || null;
+  }
+  function liveEnVoice() {
+    return speechSynthesis.getVoices()
+      .filter(v => v.lang.toLowerCase().startsWith("en"))
+      .sort((a, b) => quality(b) - quality(a))[0] || null;
   }
   pickVoices();
   speechSynthesis.onvoiceschanged = pickVoices;
+  // iOS Safari often returns an empty/partial voice list at load and never
+  // fires voiceschanged — poll for a few seconds until voices appear
+  let _pollN = 0;
+  const _poll = setInterval(() => {
+    const n = speechSynthesis.getVoices().length;
+    if (n > 0) { pickVoices(); clearInterval(_poll); }
+    else if (++_pollN > 24) clearInterval(_poll);
+  }, 250);
 
   // ---- DOM ----
   const phraseItEl = $("phraseIt"), phraseEnEl = $("phraseEn"),
@@ -623,9 +637,14 @@
   function speakDevice(text, lang, onDone, myToken) {
     const u = new SpeechSynthesisUtterance(text);
     const isIt = lang.startsWith("it");
-    const voice = isIt ? chosenVoice() : enVoice;
-    if (voice) u.voice = voice;
-    u.lang = isIt ? "it-IT" : "en-US";
+    const voice = isIt ? chosenVoice() : liveEnVoice();
+    if (voice) {
+      u.voice = voice;
+      u.lang = voice.lang;   // must match the voice exactly or iOS ignores it
+    } else {
+      u.lang = isIt ? "it-IT" : "en-US";
+    }
+    if (isIt) engineStatusEl.textContent = "Voice: " + (voice ? voice.name : "system default");
     u.rate = rate();
     u.onend = () => { if (myToken === utterCounter && isPlaying) onDone(); };
     u.onerror = (e) => {
